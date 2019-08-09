@@ -5,6 +5,12 @@ def JIRA_ID="";
 def commitMessage="";
 def prResponse="";
 def prNumber;
+def props;
+def loadProperties() {
+    node {
+        props = readProperties file: 'pipeline.properties'
+    }
+}
 def githubAPIUrl="https://api.github.com/repos/marklogic/marklogic-data-hub"
 pipeline{
 	agent none;
@@ -27,6 +33,7 @@ pipeline{
 		agent { label 'dhfLinuxAgent'}
 			steps{
 				script{
+        props = readProperties file:'data-hub/pipeline.properties';
 				if(env.CHANGE_TITLE){
 				JIRA_ID=env.CHANGE_TITLE.split(':')[0];
 				def transitionInput =[transition: [id: '41']]
@@ -55,7 +62,7 @@ pipeline{
 		stage('Unit-Tests'){
 		agent { label 'dhfLinuxAgent'}
 			steps{
-				copyRPM 'Release','9.0-9'
+				copyRPM 'Release','9.0-10'
 				setUpML '$WORKSPACE/xdmp/src/Mark*.rpm'
 				sh 'export JAVA_HOME=`eval echo "$JAVA_HOME_DIR"`;export GRADLE_USER_HOME=$WORKSPACE$GRADLE_DIR;export M2_HOME=$MAVEN_HOME/bin;export PATH=$GRADLE_USER_HOME:$PATH:$MAVEN_HOME/bin;cd $WORKSPACE/data-hub;rm -rf $GRADLE_USER_HOME/caches;./gradlew clean;./gradlew clean;./gradlew marklogic-data-hub:test;sleep 10s;./gradlew ml-data-hub:test;sleep 10s;./gradlew quick-start:test;'
 				junit '**/TEST-*.xml'
@@ -85,6 +92,8 @@ pipeline{
                    }
                    failure {
                       println("Unit Tests Failed")
+                      sh 'mkdir -p MLLogs;cp -r /var/opt/MarkLogic/Logs/* $WORKSPACE/MLLogs/'
+                      archiveArtifacts artifacts: 'MLLogs/**/*'
                       script{
                       def email;
                     if(env.CHANGE_AUTHOR){
@@ -224,7 +233,7 @@ pipeline{
 			}
 			agent { label 'dhfLinuxAgent'}
 			steps{
-				copyRPM 'Release','9.0-9'
+				copyRPM 'Release','9.0-10'
 				setUpML '$WORKSPACE/xdmp/src/Mark*.rpm'
 				sh 'export JAVA_HOME=`eval echo "$JAVA_HOME_DIR"`;export GRADLE_USER_HOME=$WORKSPACE$GRADLE_DIR;export M2_HOME=$MAVEN_HOME/bin;export PATH=$GRADLE_USER_HOME:$PATH:$MAVEN_HOME/bin;cd $WORKSPACE/data-hub;rm -rf $GRADLE_USER_HOME/caches;./gradlew clean;./gradlew clean;set +e;./gradlew marklogic-data-hub:test -Dorg.gradle.jvmargs=-Xmx1g;sleep 10s;./gradlew ml-data-hub:test;sleep 10s;./gradlew quick-start:test;sleep 10s;./gradlew marklogic-data-hub:testBootstrap -Pskipui=true;sleep 10s;./gradlew clean;./gradlew ml-data-hub:testFullCycle -Pskipui=true;'
 				junit '**/TEST-*.xml'
@@ -250,6 +259,8 @@ pipeline{
                    }
                    failure {
                       println("End-End Tests Failed")
+                      sh 'mkdir -p MLLogs;cp -r /var/opt/MarkLogic/Logs/* $WORKSPACE/MLLogs/'
+                      archiveArtifacts artifacts: 'MLLogs/**/*'
                       sendMail Email,'Check the Pipeline View Here: ${JENKINS_URL}/blue/organizations/jenkins/Datahub_CI/detail/$JOB_BASE_NAME/$BUILD_ID  \n\n\n Check Console Output Here: ${BUILD_URL}/console \n\n\n Some of the End to End tests of the branch $BRANCH_NAME failed. Please fix the tests and create a PR or create a bug for the failures.',false,'rh7-singlenode Tests for  $BRANCH_NAME Failed'
                   }
                   }
@@ -301,45 +312,10 @@ pipeline{
 		}
 		stage('Parallel Execution'){
 		when {
-  			branch '4.x-develop'
+  			branch props['ExecutionBranch']
   			beforeAgent true
 		}
 		parallel{
-		stage('rh7_cluster_9.0-6'){
-			agent { label 'dhfLinuxAgent'}
-			steps{ 
-				copyRPM 'Release','9.0-6'
-				script{
-				def dockerhost=setupMLDockerCluster 3
-				sh 'docker exec -u builder -i '+dockerhost+' /bin/sh -c "su -builder;export JAVA_HOME=`eval echo "$JAVA_HOME_DIR"`;export GRADLE_USER_HOME=$WORKSPACE$GRADLE_DIR;export M2_HOME=$MAVEN_HOME/bin;export PATH=$GRADLE_USER_HOME:$PATH:$MAVEN_HOME/bin;cd $WORKSPACE/data-hub;rm -rf $GRADLE_USER_HOME/caches;./gradlew clean;set +e;./gradlew marklogic-data-hub:test;sleep 10s;./gradlew ml-data-hub:test ;sleep 10s;./gradlew quick-start:test ;sleep 10s;./gradlew marklogic-data-hub:testBootstrap -Pskipui=true;sleep 10s;./gradlew clean;./gradlew ml-data-hub:testFullCycle -Pskipui=true;"'
-				}
-				junit '**/TEST-*.xml'
-					script{
-				 commitMessage = sh (returnStdout: true, script:'''
-			curl -u $Credentials -X GET "'''+githubAPIUrl+'''/git/commits/${GIT_COMMIT}" ''')
-			def slurper = new JsonSlurperClassic().parseText(commitMessage.toString().trim())
-				def commit=slurper.message.toString().trim();
-				JIRA_ID=commit.split(("\\n"))[0].split(':')[0].trim();
-				JIRA_ID=JIRA_ID.split(" ")[0];
-				commitMessage=null;
-				//jiraAddComment comment: 'Jenkins rh7_cluster_9.0-6 Results For PR Available', idOrKey: JIRA_ID, site: 'JIRA'
-				}
-			}
-			post{
-				 always{
-				  	sh 'rm -rf $WORKSPACE/xdmp'
-				  }
-                  success {
-                    println("rh7_cluster_9.0-6 Tests Completed")
-                    sendMail Email,'Check the Pipeline View Here: ${JENKINS_URL}/blue/organizations/jenkins/Datahub_CI/detail/$JOB_BASE_NAME/$BUILD_ID  \n\n\n Check Console Output Here: ${BUILD_URL}/console \n\n\n All the End to End tests on rh7 cluster 9.0-6 of the branch $BRANCH_NAME passed and the next stage is to merge it to release branch if all the end-end tests pass',false,'rh7_cluster_9.0-6 Tests $BRANCH_NAME Passed'
-                    // sh './gradlew publish'
-                   }
-                   failure {
-                      println("rh7_cluster_9.0-6 Tests Failed")
-                      sendMail Email,'Check the Pipeline View Here: ${JENKINS_URL}/blue/organizations/jenkins/Datahub_CI/detail/$JOB_BASE_NAME/$BUILD_ID  \n\n\n Check Console Output Here: ${BUILD_URL}/console \n\n\n Some of the End to End tests of the branch $BRANCH_NAME on 9.0-6 rh7 cluster failed. Please fix the tests and create a PR or create a bug for the failures.',false,'rh7_cluster_9.0-6 Tests for $BRANCH_NAME Failed'
-                  }
-                  }
-		}
 		stage('rh7_cluster_9.0-7'){
 			agent { label 'dhfLinuxAgent'}
 			steps{ 
@@ -370,6 +346,8 @@ pipeline{
                    }
                    failure {
                       println("rh7_cluster_9.0-7 Failed")
+                      sh 'mkdir -p MLLogs;cp -r /var/opt/MarkLogic/Logs/* $WORKSPACE/MLLogs/'
+                      archiveArtifacts artifacts: 'MLLogs/**/*'
                        sendMail Email,'Check the Pipeline View Here: ${JENKINS_URL}/blue/organizations/jenkins/Datahub_CI/detail/$JOB_BASE_NAME/$BUILD_ID  \n\n\n Check Console Output Here: ${BUILD_URL}/console \n\n\n Some of the End to End tests of the branch $BRANCH_NAME on 9.0-7 rh7 cluster failed. Please fix the tests and create a PR or create a bug for the failures.',false,'rh7_cluster_9.0-7 Tests for $BRANCH_NAME Failed'
                   }
                   }
@@ -404,15 +382,54 @@ pipeline{
                    }
                    failure {
                       println("rh7_cluster_9.0-8 Tests Failed")
+                      sh 'mkdir -p MLLogs;cp -r /var/opt/MarkLogic/Logs/* $WORKSPACE/MLLogs/'
+                      archiveArtifacts artifacts: 'MLLogs/**/*'
                       sendMail Email,'Check the Pipeline View Here: ${JENKINS_URL}/blue/organizations/jenkins/Datahub_CI/detail/$JOB_BASE_NAME/$BUILD_ID  \n\n\n Check Console Output Here: ${BUILD_URL}/console \n\n\n Some of the End to End tests of the branch $BRANCH_NAME on 9.0-8 rh7 cluster failed. Please fix the tests and create a PR or create a bug for the failures.',false,'rh7_cluster_9.0-8 Tests for $BRANCH_NAME Failed'
                   }
                   }
 		}
-		stage('w12_cluster_9.0-6'){
+    stage('rh7_cluster_9.0-9'){
+      agent { label 'dhfLinuxAgent'}
+      steps{ 
+        copyRPM 'Release','9.0-9'
+        script{
+        def dockerhost=setupMLDockerCluster 3
+        sh 'docker exec -u builder -i '+dockerhost+' /bin/sh -c "export JAVA_HOME=`eval echo "$JAVA_HOME_DIR"`;export GRADLE_USER_HOME=$WORKSPACE$GRADLE_DIR;export M2_HOME=$MAVEN_HOME/bin;export PATH=$GRADLE_USER_HOME:$PATH:$MAVEN_HOME/bin;cd $WORKSPACE/data-hub;rm -rf $GRADLE_USER_HOME/caches;./gradlew clean;set +e;./gradlew marklogic-data-hub:test;sleep 10s;./gradlew ml-data-hub:test;sleep 10s;./gradlew quick-start:test;sleep 10s;./gradlew marklogic-data-hub:testBootstrap -Pskipui=true;sleep 10s;./gradlew clean;./gradlew ml-data-hub:testFullCycle -Pskipui=true;"'
+        }
+        junit '**/TEST-*.xml'
+          script{
+         commitMessage = sh (returnStdout: true, script:'''
+      curl -u $Credentials -X GET "'''+githubAPIUrl+'''/git/commits/${GIT_COMMIT}" ''')
+      def slurper = new JsonSlurperClassic().parseText(commitMessage.toString().trim())
+        def commit=slurper.message.toString().trim();
+        JIRA_ID=commit.split(("\\n"))[0].split(':')[0].trim();
+        JIRA_ID=JIRA_ID.split(" ")[0];
+        commitMessage=null;
+        //jiraAddComment comment: 'Jenkins rh7_cluster_9.0-9 Test Results For PR Available', idOrKey: JIRA_ID, site: 'JIRA'
+        }
+      }
+      post{
+        always{
+            sh 'rm -rf $WORKSPACE/xdmp'
+          }
+                  success {
+                    println("rh7_cluster_9.0-9 Tests Completed")
+                    sendMail Email,'Check the Pipeline View Here: ${JENKINS_URL}/blue/organizations/jenkins/Datahub_CI/detail/$JOB_BASE_NAME/$BUILD_ID  \n\n\n Check Console Output Here: ${BUILD_URL}/console \n\n\n All the End to End tests on rh7 cluster 9.0-9 of the branch $BRANCH_NAME passed and the next stage is to merge it to release branch if all the end-end tests pass',false,'rh7_cluster_9.0-9 Tests for $BRANCH_NAME Passed'
+                   }
+                   failure {
+                      println("rh7_cluster_9.0-9 Tests Failed")
+                      sh 'mkdir -p MLLogs;cp -r /var/opt/MarkLogic/Logs/* $WORKSPACE/MLLogs/'
+                      archiveArtifacts artifacts: 'MLLogs/**/*'
+                      sendMail Email,'Check the Pipeline View Here: ${JENKINS_URL}/blue/organizations/jenkins/Datahub_CI/detail/$JOB_BASE_NAME/$BUILD_ID  \n\n\n Check Console Output Here: ${BUILD_URL}/console \n\n\n Some of the End to End tests of the branch $BRANCH_NAME on 9.0-9 rh7 cluster failed. Please fix the tests and create a PR or create a bug for the failures.',false,'rh7_cluster_9.0-9 Tests for $BRANCH_NAME Failed'
+                  }
+                  }
+    }
+		stage('w12_cluster_9.0-10'){
 			agent { label 'master'}
 			steps{ 
-				build 'dhf-core-4.x-develop-winserver2012-cluster_9.0-6'
 					script{
+          def Returnresult=build job: '/4.x/dhf-core-4.x-develop-winserver2012-cluster_9.0-10', propagate: false
+               currentBuild.result=Returnresult.result;
 				 commitMessage = sh (returnStdout: true, script:'''
 			curl -u $Credentials -X GET "'''+githubAPIUrl+'''/git/commits/${GIT_COMMIT}" ''')
 			def slurper = new JsonSlurperClassic().parseText(commitMessage.toString().trim())
@@ -420,7 +437,7 @@ pipeline{
 				JIRA_ID=commit.split(("\\n"))[0].split(':')[0].trim();
 				JIRA_ID=JIRA_ID.split(" ")[0];
 				commitMessage=null;
-				//jiraAddComment comment: 'Jenkins w12_cluster_9.0-6 Test Results For PR Available', idOrKey: JIRA_ID, site: 'JIRA'
+				//jiraAddComment comment: 'Jenkins w12_cluster_9.0-10 Test Results For PR Available', idOrKey: JIRA_ID, site: 'JIRA'
 				}
 			}
 			post{
@@ -428,20 +445,21 @@ pipeline{
 				  	sh 'rm -rf $WORKSPACE/xdmp'
 				  }
                   success {
-                    println("w12_cluster_9.0-6 Tests Completed")
-                    sendMail Email,'Check the Pipeline View Here: ${JENKINS_URL}/blue/organizations/jenkins/Datahub_CI/detail/$JOB_BASE_NAME/$BUILD_ID  \n\n\n Check Console Output Here: ${BUILD_URL}/console \n\n\n All the End to End tests on W2k12 cluster 9.0-6 of the branch $BRANCH_NAME passed and the next stage is to merge it to release branch if all the end-end tests pass',false,'w12_cluster_9.0-6 Tests for $BRANCH_NAME Passed'
+                    println("w12_cluster_9.0-10 Tests Completed")
+                    sendMail Email,'Check the Pipeline View Here: ${JENKINS_URL}/blue/organizations/jenkins/Datahub_CI/detail/$JOB_BASE_NAME/$BUILD_ID  \n\n\n Check Console Output Here: ${BUILD_URL}/console \n\n\n All the End to End tests on W2k12 cluster 9.0-10 of the branch $BRANCH_NAME passed and the next stage is to merge it to release branch if all the end-end tests pass',false,'w12_cluster_9.0-10 Tests for $BRANCH_NAME Passed'
                    }
                    failure {
-                      println("w12_cluster_9.0-6 Tests Failed")
-                      sendMail Email,'Check the Pipeline View Here: ${JENKINS_URL}/blue/organizations/jenkins/Datahub_CI/detail/$JOB_BASE_NAME/$BUILD_ID  \n\n\n Check Console Output Here: ${BUILD_URL}/console \n\n\n Some of the End to End tests of the branch $BRANCH_NAME on 9.0-6 w2k12 cluster failed. Please fix the tests and create a PR or create a bug for the failures.',false,'w12_cluster_9.0-6 Tests for $BRANCH_NAME Failed'
+                      println("w12_cluster_9.0-10 Tests Failed")
+                      sendMail Email,'Check the Pipeline View Here: ${JENKINS_URL}/blue/organizations/jenkins/Datahub_CI/detail/$JOB_BASE_NAME/$BUILD_ID  \n\n\n Check Console Output Here: ${BUILD_URL}/console \n\n\n Some of the End to End tests of the branch $BRANCH_NAME on 9.0-10 w2k12 cluster failed. Please fix the tests and create a PR or create a bug for the failures.',false,'w12_cluster_9.0-10 Tests for $BRANCH_NAME Failed'
                   }
                   }
 		}
 		stage('qs_rh7_singlenode'){
 			agent { label 'master'}
 			steps{ 
-				build 'NO_CI_dhf-qs-4.x-develop-rh7'
 					script{
+          def Returnresult=build job: '/4.x/NO_CI_dhf-qs-4.x-develop-rh7', propagate: false
+               currentBuild.result=Returnresult.result;
 				 commitMessage = sh (returnStdout: true, script:'''
 			curl -u $Credentials -X GET "'''+githubAPIUrl+'''/git/commits/${GIT_COMMIT}" ''')
 			def slurper = new JsonSlurperClassic().parseText(commitMessage.toString().trim())
@@ -455,7 +473,7 @@ pipeline{
 			post{
 				
                   success {
-                    println("qs_rh7_singlenode.0-8 Tests Completed")
+                    println("qs_rh7_singlenode Tests Completed")
                    sendMail Email,'Check the Pipeline View Here: ${JENKINS_URL}/blue/organizations/jenkins/Datahub_CI/detail/$JOB_BASE_NAME/$BUILD_ID  \n\n\n Check Console Output Here: ${BUILD_URL}/console \n\n\n All the End to End quick start tests on Rh7 single node of the branch $BRANCH_NAME passed and the next stage is to merge it to release branch if all the end-end tests pass',false,'qs_rh7_singlenode Tests for $BRANCH_NAME Passed'
                    }
                    failure {
@@ -467,8 +485,9 @@ pipeline{
 		stage('qs_w12_singlenode'){
 			agent { label 'master'}
 			steps{ 
-				build 'NO_CI_dhf-qs-4.x-develop-winserver2012'
 					script{
+          def Returnresult=build job: '/4.x/NO_CI_dhf-qs-4.x-develop-winserver2012', propagate: false
+               currentBuild.result=Returnresult.result;
 				 commitMessage = sh (returnStdout: true, script:'''
 			curl -u $Credentials -X GET "'''+githubAPIUrl+'''/git/commits/${GIT_COMMIT}" ''')
 			def slurper = new JsonSlurperClassic().parseText(commitMessage.toString().trim())
@@ -513,7 +532,7 @@ pipeline{
 		script{
 			//JIRA_ID=env.CHANGE_TITLE.split(':')[0]
 			prResponse = sh (returnStdout: true, script:'''
-			curl -u $Credentials  -X POST -H 'Content-Type:application/json' -d '{\"title\": \"Automated PR for Release Branch\" , \"head\": \"4.x-develop\" , \"base\": \"release/4.2.2\" }' '''+githubAPIUrl+'''/pulls ''')
+			curl -u $Credentials  -X POST -H 'Content-Type:application/json' -d '{\"title\": \"Automated PR for Release Branch\" , \"head\": \"4.x-develop\" , \"base\": \"'''+props['ReleaseBranch']+'''\" }' '''+githubAPIUrl+'''/pulls ''')
 			println(prResponse)
 			def slurper = new JsonSlurper().parseText(prResponse)
 			println(slurper.number)
@@ -549,12 +568,12 @@ pipeline{
 		}
 		stage('Sanity Tests'){
 			when {
-  			branch 'Release/4.2.2'
+  			branch props['ReleaseBranch']
   			beforeAgent true
 		}
 			agent { label 'dhfLinuxAgent'}
 			steps{
-				copyRPM 'Release','9.0-9'
+				copyRPM 'Release','9.0-10'
 				setUpML '$WORKSPACE/xdmp/src/Mark*.rpm'
 				sh 'export JAVA_HOME=`eval echo "$JAVA_HOME_DIR"`;export GRADLE_USER_HOME=$WORKSPACE$GRADLE_DIR;export M2_HOME=$MAVEN_HOME/bin;export PATH=$GRADLE_USER_HOME:$PATH:$MAVEN_HOME/bin;cd $WORKSPACE/data-hub;rm -rf $GRADLE_USER_HOME/caches;./gradlew clean;./gradlew clean;./gradlew marklogic-data-hub:test;sleep 10s;./gradlew ml-data-hub:test;sleep 10s;./gradlew quick-start:test;'
 				junit '**/TEST-*.xml'
@@ -586,6 +605,8 @@ pipeline{
                    }
                    failure {
                       println("Sanity Tests Failed")
+                      sh 'mkdir -p MLLogs;cp -r /var/opt/MarkLogic/Logs/* $WORKSPACE/MLLogs/'
+                      archiveArtifacts artifacts: 'MLLogs/**/*'
                       sendMail Email,'Check the Pipeline View Here: ${JENKINS_URL}/blue/organizations/jenkins/Datahub_CI/detail/$JOB_BASE_NAME/$BUILD_ID  \n\n\n Check Console Output Here: ${BUILD_URL}/console \n\n\n Some of the Sanity tests of the branch $BRANCH_NAME on  failed. Please fix the tests and create a PR or create a bug for the failures.',false,'Sanity Tests for $BRANCH_NAME Failed'
                   }
                   }

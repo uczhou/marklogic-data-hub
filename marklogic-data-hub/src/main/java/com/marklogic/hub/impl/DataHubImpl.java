@@ -67,7 +67,6 @@ import org.springframework.web.client.HttpServerErrorException;
 import javax.annotation.PostConstruct;
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -110,7 +109,21 @@ public class DataHubImpl implements DataHub {
         this._manageClient = hubConfig.getManageClient();
         this._adminManager = hubConfig.getAdminManager();
         this._databaseManager = new DatabaseManager(_manageClient);
-        this._serverManager = new ServerManager(_manageClient);
+        this._serverManager = constructServerManager(_manageClient, hubConfig);
+    }
+
+    /**
+     * Need to account for the group name in case the user has overridden the name of the "Default" group.
+     *
+     * @param manageClient
+     * @param hubConfig
+     * @return
+     */
+    protected ServerManager constructServerManager(ManageClient manageClient, HubConfig hubConfig) {
+        AppConfig appConfig = hubConfig.getAppConfig();
+        return appConfig != null ?
+            new ServerManager(manageClient, appConfig.getGroupName()) :
+            new ServerManager(manageClient);
     }
 
     @Override
@@ -233,23 +246,39 @@ public class DataHubImpl implements DataHub {
                 versionString = versions.getMarkLogicVersion();
             }
             int major = Integer.parseInt(versionString.replaceAll("([^.]+)\\..*", "$1"));
-            if (major < 9) {
+            if (major != 9) {
                 return false;
             }
             boolean isNightly = versionString.matches("[^-]+-(\\d{4})(\\d{2})(\\d{2})");
-            if (major == 9) {
-                String alteredString = versionString.replaceAll("[^\\d]+", "");
-                if (alteredString.length() < 4) {
-                    alteredString = StringUtils.rightPad(alteredString, 4, "0");
-                }
-                int ver = Integer.parseInt(alteredString.substring(0, 4));
-                if (!isNightly && ver < 9050) {
-                    return false;
-                }
+
+            //Support any 9.0 version >= 9.0-5.
+            int minor = 0;
+            int hotFixNum = 0;
+
+            //Extract minor version in cases where versions is of type 9.0-6.2 or 9.0-6
+            if(versionString.matches("^.*-(.+)\\.(.*)")) {
+                minor = Integer.parseInt(versionString.replaceAll("^.*-(.+)\\..*", "$1"));
+                hotFixNum = Integer.parseInt(versionString.replaceAll("^.*-(.+)\\.(.*)", "$2"));
+            }
+            else if(versionString.matches("^.*-(.+)$")){
+                minor = Integer.parseInt(versionString.replaceAll("^.*-(.+)$", "$1"));
+            }
+            //left pad minor version with 0 if it is < 10
+            String modifiedMinor = minor < 10 ? StringUtils.leftPad(String.valueOf(minor), 2, "0"):String.valueOf(minor) ;
+
+            //left pad hotFixNum  with 0 if it is < 10
+            String modifiedHotFixNum = hotFixNum < 10 ? StringUtils.leftPad(String.valueOf(hotFixNum), 2, "0"):String.valueOf(hotFixNum) ;
+            String alteredString = StringUtils.join(modifiedMinor, modifiedHotFixNum);
+            int ver = Integer.parseInt(alteredString);
+
+            //ver >= 500 => 9.0-5 and above is supported
+            if (!isNightly && ver < 500) {
+                return false;
             }
             if (isNightly) {
                 String dateString = versionString.replaceAll("[^-]+-(\\d{4})(\\d{2})(\\d{2})", "$1-$2-$3");
-                Date minDate = new GregorianCalendar(2018, 4, 5).getTime();
+                //Support all 9.0-nightly on or after 5/5/2018
+                Date minDate = new GregorianCalendar(2018, Calendar.MAY, 5).getTime();
                 Date date = new SimpleDateFormat("y-M-d").parse(dateString);
                 if (date.before(minDate)) {
                     return false;
