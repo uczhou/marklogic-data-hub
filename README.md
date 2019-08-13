@@ -1,4 +1,4 @@
-# THIS VERSION (1.x) IS NO LONGER ACTIVELY MAINTAINED OR DEVELOPED. IF YOU HAVE AN ACTIVE SUPPORT ACCOUNT WITH MARKLOGIC PLEASE FILE A SUPPORT CASE FOR ANY BUGS/ISSUES. OTHERWISE PLEASE FILE AN ISSUE ON GITHUB.
+# THIS VERSION (1.x) IS NO LONGER ACTIVELY MAINTAINED OR DEVELOPED.
 
 _The MarkLogic Data Hub Framework is a data integration framework and tool-set to quickly and efficiently integrate data from many sources into a single MarkLogic database, and expose that data._
 
