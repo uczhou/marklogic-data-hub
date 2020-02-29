@@ -195,7 +195,7 @@ const Flows: React.FC<Props> = (props) => {
                         size="small"
                         extra={
                             <div className={styles.actions}>
-                                <div className={styles.run} onClick={() => props.runStep(step.name)}><Icon type="play-circle" theme="filled" /></div>
+                                <div className={styles.run} onClick={() => props.runStep(name, step.name + '-' + step.stepDefinitionType)}><Icon type="play-circle" theme="filled" /></div>
                                 {props.canWriteFlows ?
                                     <Tooltip 
                                         title={'Delete Step'} 
