@@ -1,5 +1,5 @@
 import React, { useState, CSSProperties } from 'react';
-import { Collapse, Button, Icon, Card, Tooltip, Modal } from 'antd';
+import { Collapse, Spin, Icon, Card, Tooltip, Modal } from 'antd';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faTrashAlt } from '@fortawesome/free-regular-svg-icons';
 import { MlButton } from 'marklogic-ui-library';
@@ -19,6 +19,7 @@ interface Props {
     runStep: any;
     canReadFlows: boolean;
     canWriteFlows: boolean;
+    running: any;
 }
 
 const StepDefinitionTypeTitles = {
@@ -216,6 +217,9 @@ const Flows: React.FC<Props> = (props) => {
                         <div className={styles.cardContent}>
                             <div className={styles.format} style={sourceFormatStyle(stepFormat)}>{stepFormat.toUpperCase()}</div>
                             <div className={styles.name}>{step.name}</div>
+                        </div>
+                        <div className={styles.running} style={{display: props.running.includes(name)  ? 'block' : 'none'}}>
+                            <div><Spin /></div>
                         </div>
                     </Card>
                 )

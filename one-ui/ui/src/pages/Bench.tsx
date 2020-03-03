@@ -4,15 +4,32 @@ import Flows from '../components/flows/flows';
 import axios from 'axios'
 import { RolesContext } from "../util/roles";
 
+interface PollConfig {
+    interval: number;
+    retryLimit: number;
+}
+
+const Statuses = {
+    'FINISHED': 'finished',
+    'CANCELED': 'canceled',
+    'FAILED': 'failed'
+}
+
 const Bench: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [flows, setFlows] = useState<any[]>([]);
     const [loads, setLoads] = useState<any[]>([]);
+    const [running, setRunning] = useState<any[]>([]);
 
     // For role-based privileges
     const roleService = useContext(RolesContext);
     const canReadFlows = roleService.canReadFlows();
     const canWriteFlows = roleService.canWriteFlows();
+
+    const pollConfig: PollConfig = {
+        interval: 1000, // In millseconds
+        retryLimit: 10  // Timeout after retries
+    }
 
     useEffect(() => {
         getFlows();
@@ -110,53 +127,74 @@ const Bench: React.FC = () => {
         }
     }
 
-    // Polling function
-    function poll(fn, timeout, interval) {
-        var endTime = Number(new Date()) + (timeout || 20000);
-        interval = interval || 500;
-        var checkCondition = function(resolve, reject) { 
-            var promise = fn();
-            promise.then( function(response){
-                console.log('Flow status: ', response.data.jobStatus);
-                if(response.data.jobStatus === 'finished') {
-                    resolve(response.data.jobStatus);
-                }
-                // TODO Get rid of timeout
-                else if (Number(new Date()) < endTime) {
-                    setTimeout(checkCondition, interval, resolve, reject);
-                }
-                else {
-                    reject(new Error('timed out for ' + fn + ': ' + arguments));
-                }
-            });
-        };
-        return new Promise(checkCondition);
+    const handleRunning = (flow, isRunning) => {
+        if (isRunning) {
+            setRunning([...running, flow]); // add flow
+        } else {
+            setRunning([...running].filter(f => f !== flow)); // remove flow
+        }
     }
 
+    // Poll run status for flow
+    function poll(fn, interval) {
+        let tries = 0;
+        let checkStatus = (resolve, reject) => { 
+            let promise = fn();
+            promise.then(function(response){
+                let status = response.data.jobStatus;
+                console.log('Flow status: ', status);
+                if (status === Statuses.FINISHED || status === Statuses.CANCELED || status === Statuses.FAILED) {
+                    // Non-running status, resolve promise
+                    resolve(status);
+                } else {
+                    // Still running, poll again
+                    setTimeout(checkStatus, interval, resolve, reject);
+                }
+            }).catch(function(error) {
+                if (tries++ > pollConfig.retryLimit) {
+                    // Retry limit reached, reject promise
+                    reject(new Error('Over limit, error for ' + fn + ': ' + arguments));
+                } else {
+                    // Poll again
+                    setTimeout(checkStatus, interval, resolve, reject);
+                }
+            });;
+        };
+        return new Promise(checkStatus);
+    }
+
+    // POST /api/flows/{flowId}/run
     const runStep = async (flowId, stepId) => {
         try {
             setIsLoading(true);
-            let body = [stepId];
-            let response = await axios.post('/api/flows/' + flowId + '/run', body);
+            let response = await axios.post('/api/flows/' + flowId + '/run', [stepId]);
             if (response.status === 200) {
-                console.log('Flow started: ', flowId);
-                let interval = 500; // in milliseconds
+                console.log('Flow started: ' + flowId);
+                handleRunning(flowId, true);
                 let jobId = response.data.jobId;
-                // TODO Check for errors with timeout instead of using setTimeout
                 await setTimeout( function(){ 
                     poll(function() {
                         return axios.get('/api/jobs/' + jobId);
-                    }, 20000, interval).then(function() {
-                        console.log('Flow complete: ' + flowId);
+                    }, pollConfig.interval).then(function(status) {
+                        handleRunning(flowId, false);
+                        // TODO Handle dialog display in flows component
+                        if (status === 'finished') {
+                            console.log('Flow complete: ' + flowId);
+                            // Run success
+                        } else {
+                            console.log('Flow ' + status + ': ' + flowId);
+                            // Run failure
+                        }
                         setIsLoading(false);
-                    }).catch(function() {
-                        console.log('Flow timeout');
+                    }).catch(function(error) {
+                        console.log('Flow timeout', error);
+                        handleRunning(flowId, false);
                         setIsLoading(false);
                     });
-                }, interval);
+                }, pollConfig.interval);
             } 
         } catch (error) {
-            console.log('Error in runStep', error);
+            console.log('Error running step', error);
             setIsLoading(false);
         }
     }
@@ -190,6 +228,7 @@ const Bench: React.FC = () => {
                 deleteStep={deleteStep}
                 canReadFlows={canReadFlows}
                 canWriteFlows={canWriteFlows}
+                running={running}
             />
         </div>
     </div>
