@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import styles from './Bench.module.scss';
 import Flows from '../components/flows/flows';
+import { Modal } from 'antd';
 import axios from 'axios'
 import { RolesContext } from "../util/roles";
 
@@ -25,6 +26,7 @@ const Bench: React.FC = () => {
     const roleService = useContext(RolesContext);
     const canReadFlows = roleService.canReadFlows();
     const canWriteFlows = roleService.canWriteFlows();
+    const hasOperatorRole = roleService.hasOperatorRole();
 
     const pollConfig: PollConfig = {
         interval: 1000, // In millseconds
@@ -127,6 +129,31 @@ const Bench: React.FC = () => {
         }
     }
 
+    function showSuccess(stepType) {
+        Modal.success({
+        title: <p>{stepType} ran successfully</p>,
+            okText: 'Close',
+            onOk() {},
+        });
+    }
+
+    function showErrors(stepType, errors) {
+        Modal.error({
+            title: <p>{stepType} copmleted with errors</p>,
+            content: (
+                <div>
+                    <ul>
+                    {errors.map(e => {
+                        return <li>{e}</li>
+                    })}
+                    </ul>
+                </div>
+            ),
+            okText: 'Close',
+            onOk() {},
+        });
+    }
+
     const handleRunning = (flow, isRunning) => {
         if (isRunning) {
             setRunning([...running, flow]); // add flow
@@ -135,7 +162,7 @@ const Bench: React.FC = () => {
         }
     }
 
-    // Poll run status for flow
+    // Poll status for running flow
     function poll(fn, interval) {
         let tries = 0;
         let checkStatus = (resolve, reject) => { 
@@ -164,7 +191,7 @@ const Bench: React.FC = () => {
     }
 
     // POST /api/flows/{flowId}/run
-    const runStep = async (flowId, stepId) => {
+    const runStep = async (flowId, stepId, stepType) => {
         try {
             setIsLoading(true);
             let response = await axios.post('/api/flows/' + flowId + '/run', [stepId]);
@@ -175,15 +202,16 @@ const Bench: React.FC = () => {
                 await setTimeout( function(){ 
                     poll(function() {
                         return axios.get('/api/jobs/' + jobId);
-                    }, pollConfig.interval).then(function(status) {
+                    }, pollConfig.interval)
+                    .then(function(status) {
                         handleRunning(flowId, false);
-                        // TODO Handle dialog display in flows component
                         if (status === 'finished') {
                             console.log('Flow complete: ' + flowId);
-                            // Run success
+                            showSuccess(stepType);
                         } else {
                             console.log('Flow ' + status + ': ' + flowId);
-                            // Run failure
+                            // TODO Handle errors DHFPROD-4025
+                            showErrors(stepType, ['error1', 'error2', 'error3']);
                         }
                         setIsLoading(false);
                     }).catch(function(error) {
@@ -228,6 +256,7 @@ const Bench: React.FC = () => {
                 deleteStep={deleteStep}
                 canReadFlows={canReadFlows}
                 canWriteFlows={canWriteFlows}
+                hasOperatorRole={hasOperatorRole}
                 running={running}
             />
         </div>

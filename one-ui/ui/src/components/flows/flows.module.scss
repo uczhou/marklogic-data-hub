@@ -48,6 +48,15 @@
                 font-size: 20px;
                 cursor: pointer;
             }
+            .disabledRun {
+                position: relative;
+                top: 1px;
+                display: inline-block;
+                padding-right: 10px;
+                color: rgba(0, 0, 0, 0.25);
+                font-size: 20px;
+                cursor: not-allowed;
+            }
             .delete {
                 display: inline-block;
                 color: #7f86b5;
@@ -76,7 +85,7 @@
             }
         }
     }
-    
+
     .running {
         position: absolute;
         top: 0;

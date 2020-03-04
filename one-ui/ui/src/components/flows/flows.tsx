@@ -19,6 +19,7 @@ interface Props {
     runStep: any;
     canReadFlows: boolean;
     canWriteFlows: boolean;
+    hasOperatorRole: boolean;
     running: any;
 }
 
@@ -138,8 +139,7 @@ const Flows: React.FC<Props> = (props) => {
                         <FontAwesomeIcon 
                             icon={faTrashAlt} 
                             onClick={event => {
-                                // If you don't want click extra trigger collapse, you can prevent this:
-                                event.stopPropagation();
+                                event.stopPropagation(); // Do not trigger collapse
                                 handleFlowDelete(name);
                             }}
                             className={styles.deleteIcon} 
@@ -196,18 +196,25 @@ const Flows: React.FC<Props> = (props) => {
                         size="small"
                         extra={
                             <div className={styles.actions}>
-                                <div className={styles.run} onClick={() => props.runStep(name, step.name + '-' + step.stepDefinitionType)}><Icon type="play-circle" theme="filled" /></div>
-                                {props.canWriteFlows ?
-                                    <Tooltip 
-                                        title={'Delete Step'} 
-                                        placement="bottom"
+                                {props.hasOperatorRole ?
+                                    <div 
+                                        className={styles.run} 
+                                        onClick={() => props.runStep(name, step.name + '-' + step.stepDefinitionType, StepDefToTitle(step.stepDefinitionType))}
                                     >
+                                        <Icon type="play-circle" theme="filled" />
+                                    </div> :
+                                    <div 
+                                        className={styles.disabledRun} 
+                                        onClick={(event) => { event.stopPropagation(); event.preventDefault(); }}
+                                    >
+                                        <Icon type="play-circle" theme="filled" />
+                                    </div>
+                                }
+                                {props.canWriteFlows ?
+                                    <Tooltip title={'Delete Step'} placement="bottom">
                                         <div className={styles.delete} onClick={() => handleStepDelete(flow.name, step.name)}><Icon type="close" /></div>
                                     </Tooltip> :
-                                    <Tooltip 
-                                        title={'Delete Step'} 
-                                        placement="bottom"
-                                    >
+                                    <Tooltip title={'Delete Step'} placement="bottom">
                                         <div className={styles.disabledDelete} onClick={(event) => { event.stopPropagation(); event.preventDefault(); }}><Icon type="close" /></div>
                                     </Tooltip> 
                                 }
