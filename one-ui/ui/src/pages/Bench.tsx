@@ -141,17 +141,17 @@ const Bench: React.FC = () => {
         }
     }
 
-    function showSuccess(stepType) {
+    function showSuccess(stepName, stepType) {
         Modal.success({
-        title: <p>{stepType} ran successfully</p>,
+        title: <p>{stepType} "{stepName}" ran successfully</p>,
             okText: 'Close',
             mask: false
         });
     }
 
-    function showErrors(stepType, errors) {
+    function showErrors(stepName, stepType, errors) {
         Modal.error({
-            title: <p>{stepType} completed with errors</p>,
+            title: <p>{stepType} "{stepName}" completed with errors</p>,
             content: (
                 <div>
                     <ul>{errors.map(e => { return <li>{e}</li> })}</ul>
@@ -191,7 +191,7 @@ const Bench: React.FC = () => {
     }
 
     // POST /api/flows/{flowId}/run
-    const runStep = async (flowId, stepId, stepType) => {
+    const runStep = async (flowId, stepId, stepName, stepType) => {
         setRunStarted({flowId: flowId, stepId: stepId});
         try {
             setIsLoading(true);
@@ -207,11 +207,11 @@ const Bench: React.FC = () => {
                         setRunEnded({flowId: flowId, stepId: stepId});
                         if (status === 'finished') {
                             console.log('Flow complete: ' + flowId);
-                            showSuccess(stepType);
+                            showSuccess(stepName, stepType);
                         } else {
                             console.log('Flow ' + status + ': ' + flowId);
                             // TODO Handle errors DHFPROD-4025
-                            showErrors(stepType, ['error1', 'error2', 'error3']);
+                            showErrors(stepName, stepType, ['error1', 'error2', 'error3']);
                         }
                         setIsLoading(false);
                     }).catch(function(error) {

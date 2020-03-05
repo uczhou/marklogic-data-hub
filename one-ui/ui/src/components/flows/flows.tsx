@@ -204,7 +204,7 @@ const Flows: React.FC<Props> = (props) => {
                                 {props.hasOperatorRole ?
                                     <div 
                                         className={styles.run} 
-                                        onClick={() => props.runStep(name, step.name + '-' + step.stepDefinitionType, StepDefToTitle(step.stepDefinitionType))}
+                                        onClick={() => props.runStep(name, step.name + '-' + step.stepDefinitionType, step.name, StepDefToTitle(step.stepDefinitionType))}
                                     >
                                         <Icon type="play-circle" theme="filled" />
                                     </div> :
