@@ -180,6 +180,11 @@ const Flows: React.FC<Props> = (props) => {
         return (StepDefinitionTypeTitles[stepDef]) ? StepDefinitionTypeTitles[stepDef] : 'Unknown';
     }
 
+    const isRunning = (flowId, stepId) => {
+        let result = props.running.find(r => (r.flowId === flowId && r.stepId === stepId));
+        return result !== undefined;
+    }
+
     let panels;
     if (props.flows) {
         panels = props.flows.map((flow, i) => {
@@ -225,8 +230,9 @@ const Flows: React.FC<Props> = (props) => {
                             <div className={styles.format} style={sourceFormatStyle(stepFormat)}>{stepFormat.toUpperCase()}</div>
                             <div className={styles.name}>{step.name}</div>
                         </div>
-                        <div className={styles.running} style={{display: props.running.includes(name)  ? 'block' : 'none'}}>
+                        <div className={styles.running} style={{display: isRunning(name, step.name + '-' + step.stepDefinitionType)  ? 'block' : 'none'}}>
                             <div><Spin /></div>
+                            <div className={styles.runningLabel}>Running...</div>
                         </div>
                     </Card>
                 )

@@ -20,6 +20,8 @@ const Bench: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [flows, setFlows] = useState<any[]>([]);
     const [loads, setLoads] = useState<any[]>([]);
+    const [runStarted, setRunStarted] = useState<any>({});
+    const [runEnded, setRunEnded] = useState<any>({});
     const [running, setRunning] = useState<any[]>([]);
 
     // For role-based privileges
@@ -41,6 +43,16 @@ const Bench: React.FC = () => {
             setLoads([]);
         })
     }, [isLoading]);
+
+    useEffect(() => {
+        setRunning([...running, runStarted]);
+    }, [runStarted]);
+
+    useEffect(() => {
+        setRunning([...running].filter(
+            r => (r.flowId !== runEnded.flowId || r.stepId !== runEnded.stepId)
+        ));
+    }, [runEnded]);
 
     const getFlows = async () => {
         try {
@@ -133,33 +145,21 @@ const Bench: React.FC = () => {
         Modal.success({
         title: <p>{stepType} ran successfully</p>,
             okText: 'Close',
-            onOk() {},
+            mask: false
         });
     }
 
     function showErrors(stepType, errors) {
         Modal.error({
-            title: <p>{stepType} copmleted with errors</p>,
+            title: <p>{stepType} completed with errors</p>,
             content: (
                 <div>
-                    <ul>
-                    {errors.map(e => {
-                        return <li>{e}</li>
-                    })}
-                    </ul>
+                    <ul>{errors.map(e => { return <li>{e}</li> })}</ul>
                 </div>
             ),
             okText: 'Close',
-            onOk() {},
+            mask: false
         });
-    }
-
-    const handleRunning = (flow, isRunning) => {
-        if (isRunning) {
-            setRunning([...running, flow]); // add flow
-        } else {
-            setRunning([...running].filter(f => f !== flow)); // remove flow
-        }
     }
 
     // Poll status for running flow
@@ -192,19 +192,19 @@ const Bench: React.FC = () => {
 
     // POST /api/flows/{flowId}/run
     const runStep = async (flowId, stepId, stepType) => {
+        setRunStarted({flowId: flowId, stepId: stepId});
         try {
             setIsLoading(true);
             let response = await axios.post('/api/flows/' + flowId + '/run', [stepId]);
             if (response.status === 200) {
                 console.log('Flow started: ' + flowId);
-                handleRunning(flowId, true);
                 let jobId = response.data.jobId;
                 await setTimeout( function(){ 
                     poll(function() {
                         return axios.get('/api/jobs/' + jobId);
                     }, pollConfig.interval)
                     .then(function(status) {
-                        handleRunning(flowId, false);
+                        setRunEnded({flowId: flowId, stepId: stepId});
                         if (status === 'finished') {
                             console.log('Flow complete: ' + flowId);
                             showSuccess(stepType);
@@ -216,13 +216,14 @@ const Bench: React.FC = () => {
                         setIsLoading(false);
                     }).catch(function(error) {
                         console.log('Flow timeout', error);
-                        handleRunning(flowId, false);
+                        setRunEnded({flowId: flowId, stepId: stepId});
                         setIsLoading(false);
                     });
                 }, pollConfig.interval);
             } 
         } catch (error) {
             console.log('Error running step', error);
+            setRunEnded({flowId: flowId, stepId: stepId});
             setIsLoading(false);
         }
     }
